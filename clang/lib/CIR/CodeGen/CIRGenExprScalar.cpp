@@ -401,7 +401,7 @@ public:
     mlir::Value value{};
     mlir::Value input{};
 
-    if (const AtomicType *atomicTy = type->getAs<AtomicType>()) {
+    if (type->getAs<AtomicType>()) {
       llvm_unreachable("no atomics inc/dec yet");
     } else {
       value = emitLoadOfLValue(LV, E->getExprLoc());
@@ -469,8 +469,7 @@ public:
       // Next most common: pointer increment.
     } else if (const PointerType *ptr = type->getAs<PointerType>()) {
       QualType type = ptr->getPointeeType();
-      if (const VariableArrayType *vla =
-              CGF.getContext().getAsVariableArrayType(type)) {
+      if (CGF.getContext().getAsVariableArrayType(type)) {
         // VLA types don't have constant size.
         llvm_unreachable("NYI");
       } else if (type->isFunctionType()) {
@@ -856,11 +855,11 @@ public:
   // TODO(cir): Candidate to be in a common AST helper between CIR and LLVM
   // codegen.
   QualType getPromotionType(QualType Ty) {
-    if (auto *CT = Ty->getAs<ComplexType>()) {
+    if (Ty->getAs<ComplexType>()) {
       llvm_unreachable("NYI");
     }
     if (Ty.UseExcessPrecision(CGF.getContext())) {
-      if (auto *VT = Ty->getAs<VectorType>())
+      if (Ty->getAs<VectorType>())
         llvm_unreachable("NYI");
       return CGF.getContext().FloatTy;
     }
@@ -917,7 +916,7 @@ public:
       }
     };
 
-    if (const MemberPointerType *MPT = LHSTy->getAs<MemberPointerType>()) {
+    if (LHSTy->getAs<MemberPointerType>()) {
       assert(E->getOpcode() == BO_EQ || E->getOpcode() == BO_NE);
       mlir::Value lhs = CGF.emitScalarExpr(E->getLHS());
       mlir::Value rhs = CGF.emitScalarExpr(E->getRHS());
@@ -992,7 +991,7 @@ public:
     if (SrcType->isRealFloatingType())
       return emitFloatToBoolConversion(Src, loc);
 
-    if (auto *MPT = llvm::dyn_cast<MemberPointerType>(SrcType))
+    if (llvm::isa<MemberPointerType>(SrcType))
       assert(0 && "not implemented");
 
     if (SrcType->isIntegerType())
@@ -1362,7 +1361,7 @@ mlir::Value ScalarExprEmitter::emitMul(const BinOpInfo &Ops) {
       !CanElideOverflowCheck(CGF.getContext(), Ops))
     llvm_unreachable("NYI");
 
-  if (cir::isFPOrFPVectorTy(Ops.LHS.getType())) {
+  if (cir::isFPOrVectorOfFPType(Ops.LHS.getType())) {
     CIRGenFunction::CIRGenFPOptionsRAII FPOptsRAII(CGF, Ops.FPFeatures);
     return Builder.createFMul(Ops.LHS, Ops.RHS);
   }
@@ -1415,7 +1414,7 @@ mlir::Value ScalarExprEmitter::emitAdd(const BinOpInfo &Ops) {
       !CanElideOverflowCheck(CGF.getContext(), Ops))
     llvm_unreachable("NYI");
 
-  if (cir::isFPOrFPVectorTy(Ops.LHS.getType())) {
+  if (cir::isFPOrVectorOfFPType(Ops.LHS.getType())) {
     CIRGenFunction::CIRGenFPOptionsRAII FPOptsRAII(CGF, Ops.FPFeatures);
     return Builder.createFAdd(Ops.LHS, Ops.RHS);
   }
@@ -1458,7 +1457,7 @@ mlir::Value ScalarExprEmitter::emitSub(const BinOpInfo &Ops) {
         !CanElideOverflowCheck(CGF.getContext(), Ops))
       llvm_unreachable("NYI");
 
-    if (cir::isFPOrFPVectorTy(Ops.LHS.getType())) {
+    if (cir::isFPOrVectorOfFPType(Ops.LHS.getType())) {
       CIRGenFunction::CIRGenFPOptionsRAII FPOptsRAII(CGF, Ops.FPFeatures);
       return Builder.createFSub(Ops.LHS, Ops.RHS);
     }
@@ -2235,7 +2234,7 @@ LValue ScalarExprEmitter::emitCompoundAssignLValue(
   // Load/convert the LHS
   LValue LHSLV = CGF.emitLValue(E->getLHS());
 
-  if (const AtomicType *atomicTy = LHSTy->getAs<AtomicType>()) {
+  if (LHSTy->getAs<AtomicType>()) {
     assert(0 && "not implemented");
   }
 
@@ -2678,6 +2677,7 @@ mlir::Value ScalarExprEmitter::VisitBinLAnd(const clang::BinaryOperator *E) {
               auto res = b.create<cir::ConstantOp>(Loc, Builder.getFalseAttr());
               b.create<cir::YieldOp>(Loc, res.getRes());
             });
+        LexScope.ForceCleanup();
         B.create<cir::YieldOp>(Loc, res.getResult());
       },
       /*falseBuilder*/
@@ -2773,6 +2773,7 @@ mlir::Value ScalarExprEmitter::VisitBinLOr(const clang::BinaryOperator *E) {
               auto res = b.create<cir::ConstantOp>(Loc, Builder.getFalseAttr());
               b.create<cir::YieldOp>(Loc, res.getRes());
             });
+        LexScope.ForceCleanup();
         B.create<cir::YieldOp>(Loc, res.getResult());
       });
 
